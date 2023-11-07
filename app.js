@@ -217,7 +217,7 @@ app.post("/api/forgot-password", async (req, res) => {
     if (results.length > 0) {
       const token = crypto.randomBytes(16).toString("hex");
 
-      const expirationTime = Date.now() + 5 * 60 * 1000;
+      const expirationTime = Date.now() + 10 * 60 * 1000;
 
       const resetLink = `${process.env.CLIENT_SIDE_URL}/reset-password?user=${email}&token=${token}&expires=${expirationTime}`;
 
