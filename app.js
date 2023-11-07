@@ -5,17 +5,17 @@ const mysql = require("mysql");
 const cors = require("cors");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const {jwtDecode} = require('jwt-decode');
+const { jwtDecode } = require("jwt-decode");
 const { s3_instance } = require("./awsConfig");
 const { sendEmail } = require("./emailService");
 
 const app = express();
-const port = process.env.PORT;
+const port = process.env.PORT || "";
 
 app.use(
   cors({
-    origin: ["http://localhost:3000"],
-    methods: ["POST", "GET"],
+    origin: process.env.CORS_ORIGIN_ALLOWED,
+    methods: "*",
     credentials: true,
   })
 );
@@ -40,7 +40,7 @@ const verifyUser = (req, res, next) => {
   jwt.verify(token, "jwt-secret-key", (err, decoded) => {
     if (err) {
       return res.json({ status: 401, Error: "Token is not valid" });
-    } 
+    }
 
     // Check token expiration
     const decodedToken = jwtDecode(token);
@@ -74,7 +74,6 @@ app.post("/api/login", (req, res) => {
           expiresIn: "45m",
         });
         res.cookie("token", token);
-        console.log(results[0]);
         res.json({ status: 200, data: results[0] });
       } else {
         res.json({ status: 401 });
@@ -85,7 +84,7 @@ app.post("/api/login", (req, res) => {
 
 app.get("/api/employees", verifyUser, (req, res) => {
   const query =
-    "SELECT person_id as id, firstname, middlename, lastname, date_of_birth, email FROM personal_details";
+    "SELECT person_id as id, firstname, middlename, lastname, phone_number, date_of_birth, email FROM personal_details";
   connection.query(query, (error, results) => {
     if (error) {
       console.error("Error:", error);
@@ -217,7 +216,10 @@ app.post("/api/forgot-password", async (req, res) => {
     });
     if (results.length > 0) {
       const token = crypto.randomBytes(16).toString("hex");
-      const resetLink = `${process.env.CLIENT_SIDE_URL}/reset-password?user=${email}&token=${token}`;
+
+      const expirationTime = Date.now() + 5 * 60 * 1000;
+
+      const resetLink = `${process.env.CLIENT_SIDE_URL}/reset-password?user=${email}&token=${token}&expires=${expirationTime}`;
 
       await sendEmail(email, resetLink); // Wait for the email sending to complete
 
@@ -232,10 +234,38 @@ app.post("/api/forgot-password", async (req, res) => {
 });
 
 app.post("/api/reset-password", (req, res) => {
-  const { newPassword, email } = req.body;
+  const { newPassword, email, expirationTime } = req.body;
+  if (expirationTime && Date.now() <= expirationTime) {
+    // The link is valid and has not expired
+    connection.query(
+      "UPDATE hr_portal_credentials SET password = ? WHERE email = ?",
+      [newPassword, email],
+      (err, results) => {
+        if (err) {
+          console.error("Error:", err);
+          res.json({ status: 500 });
+          return;
+        }
+        if (results.affectedRows > 0) {
+          res.json({ status: 200 });
+        } else {
+          res.json({ status: 404, message: "User not found" });
+        }
+      }
+    );
+  } else {
+    res.json({
+      status: 410,
+      message: "The reset link has expired. Please request a new one.",
+    });
+  }
+});
+
+app.post("/api/change-password", (req, res) => {
+  const { newPassword, username } = req.body;
   connection.query(
-    "UPDATE hr_portal_credentials SET password = ? WHERE email = ?",
-    [newPassword, email],
+    "UPDATE hr_portal_credentials SET password = ? WHERE username = ?",
+    [newPassword, username],
     (err, results) => {
       if (err) {
         console.error("Error:", err);

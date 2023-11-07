@@ -1,32 +1,44 @@
-const {aws_ses} = require('./awsConfig');
+const { aws_ses } = require("./awsConfig");
+const fs = require("fs");
+const ejs = require("ejs");
 
-function sendEmail(userEmail, resetLink, res) {
-    return new Promise(async (resolve, reject) => {
-    const emailSubject = 'Password Reset Link';
-    const emailBody = `You have requested a password reset. Please click on the following link to reset your password: ${resetLink}`;
+function sendEmail(userEmail, resetLink) {
+  return new Promise(async (resolve, reject) => {
+    const emailSubject = "Password Reset Link";
+    const emailTemplate = fs.readFileSync(
+      "./templates/reset-password-email.ejs",
+      "utf8"
+    ); // Read the email template file
+
+    const compiledTemplate = ejs.compile(emailTemplate); // Compile the template using ejs
+
+    const dynamicContent = {
+      resetLink: resetLink,
+    }; // Define the dynamic content
+
+    const emailContent = compiledTemplate(dynamicContent); // Render the email content with dynamic data
 
     const params = {
-        Destination: {
-          ToAddresses: [userEmail],
+      Destination: {
+        ToAddresses: [userEmail],
+      },
+      Message: {
+        Body: {
+          Html: { Data: emailContent }, 
         },
-        Message: {
-          Body: {
-            Text: { Data: emailBody },
-          },
-          Subject: { Data: emailSubject },
-        },
-        Source: 'pragati.naik143@gmail.com',
-      };
-      aws_ses.sendEmail(params, (err, data) => {
-        if (err) {
-          console.error('Error sending email:', err);
-          reject(err);
-        } else {
-          console.log('Email sent:', data);
-          resolve(data);
-        }
-      });
+        Subject: { Data: emailSubject },
+      },
+      Source: "pragati.naik143@gmail.com",
+    };
+    aws_ses.sendEmail(params, (err, data) => {
+      if (err) {
+        console.error("Error sending email:", err);
+        reject(err);
+      } else {
+        resolve(data);
+      }
     });
+  });
 }
 
-module.exports = {sendEmail}
+module.exports = { sendEmail };
