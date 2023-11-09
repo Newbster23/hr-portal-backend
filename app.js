@@ -4,6 +4,7 @@ const cookieParser = require("cookie-parser");
 const mysql = require("mysql");
 const cors = require("cors");
 const crypto = require("crypto");
+const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { jwtDecode } = require("jwt-decode");
 const { s3_instance } = require("./awsConfig");
@@ -21,6 +22,8 @@ app.use(
 );
 app.use(express.json());
 app.use(cookieParser());
+
+const saltRounds = 10;
 
 const connection = mysql.createConnection({
   host: process.env.DB_HOST,
@@ -59,8 +62,8 @@ app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
 
   connection.query(
-    "SELECT * FROM hr_portal_credentials WHERE username = ? AND password = ?",
-    [username, password],
+    "SELECT * FROM hr_portal_credentials WHERE username = ?",
+    [username],
     (err, results) => {
       if (err) {
         console.error("Error during login:", err);
@@ -68,15 +71,34 @@ app.post("/api/login", (req, res) => {
         res.json({ status: 500 });
         return;
       }
-      if (results.length > 0) {
+
+      if (results.length === 1) {
+        const hashedPassword = results[0].password;
         const username = results[0].username;
-        const token = jwt.sign({ username }, "jwt-secret-key", {
-          expiresIn: "45m",
+        bcrypt.compare(password, String(hashedPassword), (err, isMatch) => {
+          if (err) {
+            console.error("Error while validating the password", err);
+            console.log("Error while validating the password", err);
+            res.json({ status: 500 });
+            return;
+          }
+
+          if (isMatch) {
+            const token = jwt.sign({ username }, "jwt-secret-key", {
+              expiresIn: "45m",
+            });
+            res.cookie("token", token);
+            res.json({ status: 200, data: results[0] });
+          } else {
+            console.error("Error while validating the password");
+            console.log("Error while validating the password");
+            res.json({ status: 401, message: "Password is incorrect!" });
+            return;
+          }
         });
-        res.cookie("token", token);
-        res.json({ status: 200, data: results[0] });
       } else {
-        res.json({ status: 401 });
+        res.json({ status: 401, message: "Username not found!" });
+        return;
       }
     }
   );
@@ -91,7 +113,7 @@ app.get("/api/employees", verifyUser, (req, res) => {
       res.json({ status: 500, error: "Failed to fetch employees" });
       return;
     }
-    res.json(results);
+    res.json({status: 200, data: results});
   });
 });
 
@@ -99,7 +121,7 @@ app.get("/api/employeeDetails/:id", verifyUser, (req, res) => {
   const employeeId = req.params.id;
 
   const query1 =
-    "SELECT firstname, middlename, lastname, address, city, state, pincode, date_of_birth, phone_number, email, emergency_contact_name, emergency_contact_number, relation_with_employee, marital_status, blood_group FROM personal_details WHERE person_id = ?";
+    "SELECT firstname, middlename, lastname, gender, marital_status, blood_group, address, city, state, pincode, date_of_birth, phone_number, email, emergency_contact_name, emergency_contact_number, relation_with_employee, aadhaar_number, pan_number FROM personal_details WHERE person_id = ?";
   const query2 =
     "SELECT degree, university, year_of_passing, percentage FROM qualification_details WHERE person_id = ?";
   const query3 =
@@ -141,7 +163,7 @@ app.get("/api/employeeDetails/:id", verifyUser, (req, res) => {
         result.professionalDetails = results;
 
         // Send the combined result as JSON response
-        res.json(result);
+        res.json({status: 200, data: result});
       });
     });
   });
@@ -166,7 +188,7 @@ app.get("/api/documents/:folder", verifyUser, async (req, res) => {
     res.json(docKeys);
   } catch (error) {
     console.error("Error listing objects:", error);
-    res.status(500).json({ error: "Failed to list documents" });
+    res.json({ status:500, error: "Failed to list documents" });
   }
 });
 
@@ -237,22 +259,32 @@ app.post("/api/reset-password", (req, res) => {
   const { newPassword, email, expirationTime } = req.body;
   if (expirationTime && Date.now() <= expirationTime) {
     // The link is valid and has not expired
-    connection.query(
-      "UPDATE hr_portal_credentials SET password = ? WHERE email = ?",
-      [newPassword, email],
-      (err, results) => {
-        if (err) {
-          console.error("Error:", err);
-          res.json({ status: 500 });
-          return;
-        }
-        if (results.affectedRows > 0) {
-          res.json({ status: 200 });
-        } else {
-          res.json({ status: 404, message: "User not found" });
-        }
+    bcrypt.hash(newPassword, saltRounds, (err, hash) => {
+      if (err) {
+        console.error("Error during hashing the password:", err);
+        console.log("Error during hashing the password:", err);
+        res.json({ status: 500 });
+        return;
       }
-    );
+
+      connection.query(
+        "UPDATE hr_portal_credentials SET password = ? WHERE email = ?",
+        [hash, email],
+        (err, results) => {
+          if (err) {
+            console.error("Error while updating the password:", err);
+            console.log("Error while updating the password:", err);
+            res.json({ status: 500 });
+            return;
+          }
+          if (results.affectedRows > 0) {
+            res.json({ status: 200 });
+          } else {
+            res.json({ status: 404, message: "User not found" });
+          }
+        }
+      );
+    });
   } else {
     res.json({
       status: 410,
@@ -263,22 +295,31 @@ app.post("/api/reset-password", (req, res) => {
 
 app.post("/api/change-password", (req, res) => {
   const { newPassword, username } = req.body;
-  connection.query(
-    "UPDATE hr_portal_credentials SET password = ? WHERE username = ?",
-    [newPassword, username],
-    (err, results) => {
-      if (err) {
-        console.error("Error:", err);
-        res.json({ status: 500 });
-        return;
-      }
-      if (results.affectedRows > 0) {
-        res.json({ status: 200 });
-      } else {
-        res.json({ status: 404, message: "User not found" });
-      }
+  bcrypt.hash(newPassword, saltRounds, (err, hash) => {
+    if (err) {
+      console.error("Error during hashing the password:", err);
+      console.log("Error during hashing the password:", err);
+      res.json({ status: 500 });
+      return;
     }
-  );
+    connection.query(
+      "UPDATE hr_portal_credentials SET password = ? WHERE username = ?",
+      [hash, username],
+      (err, results) => {
+        if (err) {
+          console.error("Error while updating the password:", err);
+          console.log("Error while updating the password:", err);
+          res.json({ status: 500 });
+          return;
+        }
+        if (results.affectedRows > 0) {
+          res.json({ status: 200 });
+        } else {
+          res.json({ status: 404, message: "User not found" });
+        }
+      }
+    );
+  });
 });
 
 app.get("/api/logout", (req, res) => {
