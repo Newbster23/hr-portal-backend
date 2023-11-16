@@ -12,8 +12,17 @@ function sendEmail(userEmail, resetLink) {
 
     const compiledTemplate = ejs.compile(emailTemplate); // Compile the template using ejs
 
+    const expirationTimeInMilliseconds = parseInt(
+      process.env.RESET_PASSWORD_LINK_EXPIRATION_TIME_MILLISECONDS,
+      10
+    );
+
+    // Convert milliseconds to minutes
+    const expirationTimeInMinutes = expirationTimeInMilliseconds / (1000 * 60);
+
     const dynamicContent = {
       resetLink: resetLink,
+      exiprationTime: expirationTimeInMinutes,
     }; // Define the dynamic content
 
     const emailContent = compiledTemplate(dynamicContent); // Render the email content with dynamic data
@@ -24,7 +33,7 @@ function sendEmail(userEmail, resetLink) {
       },
       Message: {
         Body: {
-          Html: { Data: emailContent }, 
+          Html: { Data: emailContent },
         },
         Subject: { Data: emailSubject },
       },

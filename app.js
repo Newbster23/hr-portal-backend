@@ -60,7 +60,7 @@ const verifyUser = (req, res, next) => {
 
 app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
-
+  const expiresIn = process.env.SESSION_EXPIRATION_TIME || '45m';
   connection.query(
     "SELECT * FROM hr_portal_credentials WHERE username = ?",
     [username],
@@ -85,7 +85,7 @@ app.post("/api/login", (req, res) => {
 
           if (isMatch) {
             const token = jwt.sign({ username }, "jwt-secret-key", {
-              expiresIn: "45m",
+              expiresIn,
             });
             res.cookie("token", token);
             res.json({ status: 200, data: results[0] });
@@ -113,7 +113,7 @@ app.get("/api/employees", verifyUser, (req, res) => {
       res.json({ status: 500, error: "Failed to fetch employees" });
       return;
     }
-    res.json({status: 200, data: results});
+    res.json({ status: 200, data: results });
   });
 });
 
@@ -163,7 +163,7 @@ app.get("/api/employeeDetails/:id", verifyUser, (req, res) => {
         result.professionalDetails = results;
 
         // Send the combined result as JSON response
-        res.json({status: 200, data: result});
+        res.json({ status: 200, data: result });
       });
     });
   });
@@ -188,7 +188,7 @@ app.get("/api/documents/:folder", verifyUser, async (req, res) => {
     res.json(docKeys);
   } catch (error) {
     console.error("Error listing objects:", error);
-    res.json({ status:500, error: "Failed to list documents" });
+    res.json({ status: 500, error: "Failed to list documents" });
   }
 });
 
@@ -239,7 +239,8 @@ app.post("/api/forgot-password", async (req, res) => {
     if (results.length > 0) {
       const token = crypto.randomBytes(16).toString("hex");
 
-      const expirationTime = Date.now() + 10 * 60 * 1000;
+      const expirationTime =
+        Date.now() + parseInt(process.env.RESET_PASSWORD_LINK_EXPIRATION_TIME_MILLISECONDS, 10);
 
       const resetLink = `${process.env.CLIENT_SIDE_URL}/reset-password?user=${email}&token=${token}&expires=${expirationTime}`;
 
