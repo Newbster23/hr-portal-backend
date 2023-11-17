@@ -1,19 +1,21 @@
-const { aws_ses } = require("./awsConfig");
 const fs = require("fs");
 const ejs = require("ejs");
+const path = require('path');
+const { aws_ses } = require("../awsConfig");
+const constant = require('../constants');
 
 function sendEmail(userEmail, resetLink) {
   return new Promise(async (resolve, reject) => {
     const emailSubject = "Password Reset Link";
     const emailTemplate = fs.readFileSync(
-      "./templates/reset-password-email.ejs",
+      path.join(__dirname, "../templates/reset-password-email.ejs"),
       "utf8"
     ); // Read the email template file
 
     const compiledTemplate = ejs.compile(emailTemplate); // Compile the template using ejs
 
     const expirationTimeInMilliseconds = parseInt(
-      process.env.RESET_PASSWORD_LINK_EXPIRATION_TIME_MILLISECONDS,
+      constant.resetPasswordLinkExpirationTime,
       10
     );
 
@@ -37,7 +39,7 @@ function sendEmail(userEmail, resetLink) {
         },
         Subject: { Data: emailSubject },
       },
-      Source: "pragati.naik143@gmail.com",
+      Source: constant.senderEmail,
     };
     aws_ses.sendEmail(params, (err, data) => {
       if (err) {

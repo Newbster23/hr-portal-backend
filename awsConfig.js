@@ -1,11 +1,12 @@
 const AWS = require('aws-sdk');
+const constant = require('./constants');
 
-if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.REGION) {
+if (!constant.awsAccessKeyId || !constant.awsSecretAccessKey || !constant.awsRegion) {
   console.error('AWS credentials or region not set. Please configure them.');
 } else {
   AWS.config.update({
-    region: process.env.REGION,
-    credentials: new AWS.Credentials(process.env.AWS_ACCESS_KEY_ID, process.env.AWS_SECRET_ACCESS_KEY)
+    region: constant.awsRegion,
+    credentials: new AWS.Credentials(constant.awsAccessKeyId, constant.awsSecretAccessKey)
   });
 }
 
