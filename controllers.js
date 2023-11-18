@@ -1,6 +1,5 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const crypto = require("crypto");
 const constant = require("./constants");
 const { dbconnection } = require("./dbConfig");
 const { s3_instance } = require("./awsConfig");
@@ -40,8 +39,8 @@ const loginController = (req, res) => {
             res.cookie("token", token);
             res.json({ status: 200, data: results[0] });
           } else {
-            console.error("Error while validating the password");
-            console.log("Error while validating the password");
+            console.error("Password is incorrect!");
+            console.log("Password is incorrect!");
             res.json({ status: 401, message: "Password is incorrect!" });
             return;
           }
@@ -187,12 +186,17 @@ const forgotPassword = async (req, res) => {
       );
     });
     if (results.length > 0) {
-      const token = crypto.randomBytes(16).toString("hex");
-
       const expirationTime =
         Date.now() + parseInt(constant.resetPasswordLinkExpirationTime, 10);
 
-      const resetLink = `${constant.clientsideUrl}/reset-password?user=${email}&token=${token}&expires=${expirationTime}`;
+      const tokenPayload = {
+        user: email,
+        exp: expirationTime,
+      };
+
+      const token = jwt.sign(tokenPayload, jwtSecretKey);
+
+      const resetLink = `${constant.clientsideUrl}/reset-password?token=${token}`;
 
       await sendEmail(email, resetLink); // Wait for the email sending to complete
 
@@ -207,8 +211,10 @@ const forgotPassword = async (req, res) => {
 };
 
 const resetPassword = (req, res) => {
-  const { newPassword, email, expirationTime } = req.body;
-  if (expirationTime && Date.now() <= expirationTime) {
+  const { token, newPassword } = req.body;
+  const decodedToken = jwt.verify(token, jwtSecretKey);
+
+  if (decodedToken.exp && Date.now() <= decodedToken.exp) {
     // The link is valid and has not expired
     bcrypt.hash(newPassword, constant.saltRounds, (err, hash) => {
       if (err) {
@@ -220,7 +226,7 @@ const resetPassword = (req, res) => {
 
       dbconnection.query(
         "UPDATE hr_portal_credentials SET password = ? WHERE email = ?",
-        [hash, email],
+        [hash, decodedToken.user],
         (err, results) => {
           if (err) {
             console.error("Error while updating the password:", err);
